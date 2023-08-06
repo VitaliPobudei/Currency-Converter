@@ -1,41 +1,78 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./styles.css";
 import axios from "axios";
 
-import Select, { components } from "react-select";
+import Select, { components, createFilter } from "react-select";
 import Calendar from "react-calendar";
 import "./Calendar.css";
+import search from "../../assets/icons/search.svg";
+import noNameFlag from "../../assets/icons/icon-flag.png";
 
 const Main = ({ currencies = null, countryCodes }) => {
   const [selectedCurrency, setSelectedCurrency] = useState(null);
+  const [selectedCurrencyForPeriod, setSelectedCurrencyForPeriod] = useState();
   const [selectedCurrencyRate, setSelectedCurrencyRate] = useState();
   const [valueFrom, setValueFrom] = useState();
   const [valueTo, setValueTo] = useState();
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [minDate, setMinDate] = useState();
+  const [maxDate, setMaxDate] = useState();
+  const [currenciesRateOnDate, setCurrenciesRateOnDate] = useState([]);
 
   function changeDate(date) {
     setSelectedDate(date);
+    fetchAllRates(date);
     if (selectedCurrency != null) {
-      fetchRate(selectedCurrency, date);
+      const currencyForPeriod = getCurrencyByDate(selectedCurrency, date);
+      setSelectedCurrencyForPeriod(currencyForPeriod);
+      fetchRate(selectedCurrency, currencyForPeriod, date);
     }
   }
 
   function selectCurrency(currency) {
     setSelectedCurrency(currency);
-    fetchRate(currency, selectedDate);
+    const currencyForPeriod = getCurrencyByDate(currency, selectedDate);
+    setSelectedCurrencyForPeriod(currencyForPeriod);
+
+    const currencyValidityPeriod = resolveCurrencyPeriod(currency);
+    setMinDate(currencyValidityPeriod[0]);
+    setMaxDate(currencyValidityPeriod[1]);
+    fetchRate(currency, currencyForPeriod, selectedDate);
   }
 
-  function fetchRate(currency, date = new Date()) {
+  function getCurrencyByDate(currency, date) {
+    return currency.Periods.find(
+      (value) => date >= value.Cur_DateStart && date <= value.Cur_DateEnd
+    );
+  }
+
+  function fetchRate(currency, currencyForPeriod, date) {
+    if (currencyForPeriod === undefined) {
+      return;
+    }
+
     const dateString =
       date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate();
+
     const apiUrl =
       "https://api.nbrb.by/exrates/rates/" +
-      currency.Cur_ID +
+      currencyForPeriod.Cur_ID +
       "?ondate=" +
       dateString;
     axios.get(apiUrl).then((resp) => {
       setSelectedCurrencyRate(resp.data.Cur_OfficialRate);
       setValueTo((valueFrom / resp.data.Cur_OfficialRate).toFixed(4));
+    });
+  }
+
+  function fetchAllRates(date = new Date()) {
+    const dateString =
+      date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate();
+
+    const apiUrl =
+      "https://api.nbrb.by/exrates/rates/?periodicity=0&ondate=" + dateString;
+    axios.get(apiUrl).then((resp) => {
+      setCurrenciesRateOnDate(resp.data);
     });
   }
 
@@ -48,6 +85,36 @@ const Main = ({ currencies = null, countryCodes }) => {
     setValueFrom(event.target.value);
     setValueTo((event.target.value / selectedCurrencyRate).toFixed(4));
   }
+
+  function resolveCurrencyPeriod(currency) {
+    let minDate = null,
+      maxDate = null;
+    currency.Periods.forEach((elem) => {
+      if (minDate == null || minDate > elem.Cur_DateStart) {
+        minDate = elem.Cur_DateStart;
+      }
+
+      if (maxDate == null || maxDate < elem.Cur_DateEnd) {
+        maxDate = elem.Cur_DateEnd;
+      }
+    });
+
+    console.log(minDate);
+
+    return [minDate, maxDate];
+  }
+
+  const filterConfig = {
+    ignoreCase: true,
+    ignoreAccents: true,
+    matchFrom: "any",
+    stringify: (option) => `${option.data.Cur_Name}`,
+    trim: false,
+  };
+
+  useEffect(() => {
+    fetchAllRates(selectedDate);
+  }, [selectedDate]);
 
   return (
     <main className="main">
@@ -72,7 +139,8 @@ const Main = ({ currencies = null, countryCodes }) => {
           <Calendar
             defaultValue={selectedDate}
             onChange={changeDate}
-            maxDate={new Date()}
+            maxDate={maxDate < new Date() ? maxDate : new Date()}
+            minDate={minDate}
           />
         </div>
         <form>
@@ -85,7 +153,7 @@ const Main = ({ currencies = null, countryCodes }) => {
                   name="cell-BYN"
                   onChange={calculateValueTo}
                   value={valueFrom}
-                  disabled={selectedCurrency === null}
+                  disabled={selectedCurrencyForPeriod === undefined}
                   placeholder="кол-во рублей"
                 />
               </p>
@@ -96,7 +164,7 @@ const Main = ({ currencies = null, countryCodes }) => {
                   name="cell-currency"
                   value={valueTo}
                   onChange={calculateValueFrom}
-                  disabled={selectedCurrency === null}
+                  disabled={selectedCurrencyForPeriod === undefined}
                   placeholder="кол-во валюты"
                 />
               </p>
@@ -110,22 +178,27 @@ const Main = ({ currencies = null, countryCodes }) => {
                 Белорусских рублей
               </p>
               <Select
-                options={currencies}
+                options={Object.values(currencies)}
                 getOptionLabel={(option) => (
                   <div style={{ display: "flex", alignItems: "center" }}>
                     <img
                       src={
-                        "https://www.nbrb.by/i/flags/flags/4x3/" +
-                        countryCodes[option.Cur_Abbreviation] +
-                        ".svg"
+                        countryCodes[option.Cur_Abbreviation]
+                          ? "https://www.nbrb.by/i/flags/flags/4x3/" +
+                            countryCodes[option.Cur_Abbreviation] +
+                            ".svg"
+                          : noNameFlag
                       }
                       style={{ width: 36 }}
                     />
-                    <span style={{ marginLeft: 5 }}>{option.Cur_Name}</span>
+                    <span style={{ marginLeft: 5 }}>
+                      {option.Cur_Name} ({option.Cur_Abbreviation})
+                    </span>
                   </div>
                 )}
                 onChange={selectCurrency}
                 placeholder="* выберите валюту"
+                filterOption={createFilter(filterConfig)}
               />
             </div>
           </div>
@@ -133,8 +206,8 @@ const Main = ({ currencies = null, countryCodes }) => {
             style={{ display: selectedCurrency ? "block" : "none" }}
             className="result"
           >
-            {selectedCurrency &&
-              `${selectedCurrency.Cur_Scale} ${selectedCurrency.Cur_Abbreviation} = ${selectedCurrencyRate} BYN`}
+            {selectedCurrencyForPeriod &&
+              `${selectedCurrencyForPeriod.Cur_Scale} ${selectedCurrency.Cur_Abbreviation} = ${selectedCurrencyRate} BYN`}
           </div>
         </form>
       </div>
@@ -155,15 +228,17 @@ const Main = ({ currencies = null, countryCodes }) => {
             </tr>
           </thead>
           <tbody>
-            {currencies.map((item) => {
+            {currenciesRateOnDate.map((item) => {
               return (
                 <tr key={item.Cur_ID}>
                   <td>
                     <img
                       src={
-                        "https://www.nbrb.by/i/flags/flags/4x3/" +
-                        countryCodes[item.Cur_Abbreviation] +
-                        ".svg"
+                        countryCodes[item.Cur_Abbreviation]
+                          ? "https://www.nbrb.by/i/flags/flags/4x3/" +
+                            countryCodes[item.Cur_Abbreviation] +
+                            ".svg"
+                          : noNameFlag
                       }
                       style={{ width: 36 }}
                     />
