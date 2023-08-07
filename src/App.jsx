@@ -55,7 +55,7 @@ function App() {
     axios.get(apiUrl).then((resp) => {
       setCurrencies(convertCurrencies(resp.data));
     });
-  }, [setCurrencies]);
+  }, []);
   return (
     <>
       <Header />

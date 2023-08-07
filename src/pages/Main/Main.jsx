@@ -21,7 +21,7 @@ const Main = ({ currencies = null, countryCodes }) => {
 
   function changeDate(date) {
     setSelectedDate(date);
-    fetchAllRates(date);
+    // fetchAllRates(date);
     if (selectedCurrency != null) {
       const currencyForPeriod = getCurrencyByDate(selectedCurrency, date);
       setSelectedCurrencyForPeriod(currencyForPeriod);
@@ -65,7 +65,7 @@ const Main = ({ currencies = null, countryCodes }) => {
     });
   }
 
-  function fetchAllRates(date = new Date()) {
+  function fetchAllRates(date) {
     const dateString =
       date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate();
 
@@ -98,8 +98,6 @@ const Main = ({ currencies = null, countryCodes }) => {
         maxDate = elem.Cur_DateEnd;
       }
     });
-
-    console.log(minDate);
 
     return [minDate, maxDate];
   }
